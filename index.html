@@ -855,12 +855,32 @@ function saveGoalsFromForm(){
 function resetGoals(){ GOALS={...DEFAULT_GOALS}; saveGoals(GOALS); applyDate(selectedKey); showToast('已恢复默认目标'); }
 const views = { home:renderHome, steps:renderSteps, heart:renderHeart, sleep:renderSleep, screen:renderScreen, workouts:renderWorkouts, ai:renderAI, settings:renderSettings, sources:renderSources };
 
+/* ---------- hash 路由（支持 deep-link） ---------- */
+function parseHash(){
+  const h=location.hash.replace(/^#\/?/,''); if(!h) return null;
+  const [view,query]=h.split('?');
+  const dateRaw=new URLSearchParams(query||'').get('date');
+  return { view:view||null, dateKey: dateRaw?dateRaw.replace(/-/g,''):null };
+}
+function syncHash(){
+  let h='#'+currentView;
+  if(selectedKey && selectedKey!==latestKey) h+='?date='+keyISO(selectedKey);
+  if(location.hash!==h){ try{ history.replaceState(null,'',h); }catch(e){ location.hash=h; } }
+}
+function onHashChange(){
+  const pp=parseHash(); if(!pp) return;
+  let dateChanged=false;
+  if(pp.dateKey && healthKeys.includes(pp.dateKey) && pp.dateKey!==selectedKey){ selectedKey=pp.dateKey; dateChanged=true; }
+  if(pp.view && views[pp.view] && pp.view!==currentView){ currentView=pp.view; }
+  if(dateChanged) applyDate(selectedKey); else nav(currentView);
+}
 function nav(id){
   currentView=id;
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.view===id));
   if(!DATA){ app.innerHTML=loadingView(); return; }
   app.innerHTML=(views[id]||renderHome)();
   app.scrollTop=0;
+  syncHash();
 }
 function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),2600); }
 
@@ -886,6 +906,8 @@ async function boot(){
     healthKeys = Object.keys(sd).sort();
     latestKey = healthKeys[healthKeys.length-1];
     if(!selectedKey || !healthKeys.includes(selectedKey)) selectedKey = latestKey;
+    const ih=parseHash();
+    if(ih){ if(ih.dateKey && healthKeys.includes(ih.dateKey)) selectedKey=ih.dateKey; if(ih.view && views[ih.view]) currentView=ih.view; }
     await applyDate(selectedKey);
     showToast(runMode==='live' ? '已连接本地后端 · 实时数据' : '静态快照模式 · GitHub 演示');
   }catch(e){
@@ -920,6 +942,7 @@ function renderDatebar(){
 }
 
 document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>nav(b.dataset.view)));
+window.addEventListener('hashchange', onHashChange);
 boot();
 </script>
 </body>

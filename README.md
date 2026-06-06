@@ -44,6 +44,19 @@ bash scripts/uninstall-launchagent.sh  # 停止并卸载
 | GET | `/api/status` | 后端 / 数据源状态 |
 | POST | `/api/refresh` | 触发本地刷新脚本（best-effort） |
 
+## Deep-link（hash 路由）
+
+从外部网站直接链接到指定视图与日期：
+
+| 链接 | 打开 |
+|---|---|
+| `…/#home` | 首页 |
+| `…/#heart` | 实时心率 & HRV |
+| `…/#screen?date=2026-06-06` | 屏幕使用（指定日） |
+| `…/#steps?date=2026-06-05` | 步数统计（指定日） |
+
+视图名：`home / steps / heart / sleep / screen / workouts / ai / settings / sources`；`date` 支持 `YYYY-MM-DD` 或 `YYYYMMDD`，仅当该日有健康数据时生效。
+
 ## 数据来源与刷新
 
 - **健康**：Health Auto Export → `autosync-summary.json`，macOS LaunchAgent 每 15 分钟刷新
