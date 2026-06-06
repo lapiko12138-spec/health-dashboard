@@ -63,7 +63,8 @@ health-dashboard/
 ├── scripts/
 │   ├── com.zhangjiahui.health-dashboard.plist
 │   ├── install-launchagent.sh
-│   └── uninstall-launchagent.sh
+│   ├── uninstall-launchagent.sh
+│   └── generate-demo-data.py      # 重新生成公开展示用的合成数据
 ├── logs/                      # 后端日志（gitignore）
 ├── package.json
 └── README.md
