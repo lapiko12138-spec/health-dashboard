@@ -522,9 +522,9 @@ function renderHome(){
       <div class="progress-value" style="font-size:12px;color:var(--muted)">参考 10 km</div>
     </div>
     <div class="metric-card" onclick="nav('heart')">
-      <div class="metric-head"><span>静息心率</span><span class="metric-icon">❤️</span></div>
-      ${metricVal(t.hrResting,'bpm')} ${t.hrResting?pill('正常范围'):pill('暂无','warn')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrAvg?'实时 '+t.hrAvg+' bpm · 区间 '+t.hrMin+'–'+t.hrMax:t.hrSamples+' 次采样'} · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div>
+      <div class="metric-head"><span>实时心率</span><span class="metric-icon">💓</span></div>
+      ${metricVal(t.hrAvg,'bpm')} ${t.hrAvg?pill('区间 '+t.hrMin+'–'+t.hrMax):pill('暂无','warn')}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrAvg?'最低 '+t.hrMin+' · 最高 '+t.hrMax+(t.hrResting?' · 静息 '+t.hrResting+' bpm':''):t.hrSamples+' 次采样'} · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div>
     </div>
     <div class="metric-card" onclick="nav('heart')">
       <div class="metric-head"><span>心率变异性</span><span class="metric-icon">📊</span></div>
