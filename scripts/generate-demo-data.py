@@ -27,6 +27,9 @@ def synth(name, e):
         e['sumQty'] = round(random.uniform(4, 11), 2)
     elif name == 'resting_heart_rate':
         x = float(random.randint(58, 74)); e['avgQty'] = e['minQty'] = e['maxQty'] = x
+    elif name == 'heart_rate':
+        lo = random.randint(52, 65); hi = random.randint(98, 145); avg = random.randint(lo + 6, 86)
+        e['minQty'] = float(lo); e['maxQty'] = float(hi); e['avgQty'] = float(avg)
     elif name == 'heart_rate_variability':
         lo = random.uniform(38, 48); hi = lo + random.uniform(8, 20)
         e['minQty'] = round(lo, 1); e['maxQty'] = round(hi, 1); e['avgQty'] = round((lo + hi) / 2, 1)

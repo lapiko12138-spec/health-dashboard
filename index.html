@@ -360,6 +360,9 @@ function transform(h, s, selectedKey){
     distance: +(field('walking_running_distance',todayKey,'sumQty')||0).toFixed(2),
     hrResting: rhr!=null ? Math.round(rhr) : null,
     hrSamples: hrE.samples||0,
+    hrAvg: field('heart_rate',todayKey,'avgQty')!=null ? Math.round(field('heart_rate',todayKey,'avgQty')) : null,
+    hrMin: field('heart_rate',todayKey,'minQty')!=null ? Math.round(field('heart_rate',todayKey,'minQty')) : null,
+    hrMax: field('heart_rate',todayKey,'maxQty')!=null ? Math.round(field('heart_rate',todayKey,'maxQty')) : null,
     hrStart: hrE.start, hrEnd: hrE.end, rhrEnd: entry('resting_heart_rate',todayKey).end,
     hrv: {
       avg: hrvE.avgQty!=null ? +hrvE.avgQty.toFixed(1) : null,
@@ -521,7 +524,7 @@ function renderHome(){
     <div class="metric-card" onclick="nav('heart')">
       <div class="metric-head"><span>静息心率</span><span class="metric-icon">❤️</span></div>
       ${metricVal(t.hrResting,'bpm')} ${t.hrResting?pill('正常范围'):pill('暂无','warn')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrSamples} 次采样 · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div>
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrAvg?'实时 '+t.hrAvg+' bpm · 区间 '+t.hrMin+'–'+t.hrMax:t.hrSamples+' 次采样'} · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div>
     </div>
     <div class="metric-card" onclick="nav('heart')">
       <div class="metric-head"><span>心率变异性</span><span class="metric-icon">📊</span></div>
@@ -610,6 +613,7 @@ function renderHeart(){
   <div class="topbar"><div><h1>心率 &amp; HRV</h1><p>${D.date} · Apple Watch 数据 · 北京时间</p></div></div>
   ${D.watchWarn?`<div class="info-banner" style="margin-bottom:20px"><span>⚠️</span><div>Apple Watch 心率相关指标近期同步受限，部分时段无数据。建议检查 Health Auto Export 源权限与 Apple Watch 同步状态。</div></div>`:''}
   <div class="metrics-grid">
+    <div class="metric-card"><div class="metric-head"><span>实时心率</span><span class="metric-icon">💓</span></div>${metricVal(t.hrAvg,'bpm')} ${t.hrAvg?pill('区间 '+t.hrMin+'–'+t.hrMax):pill('暂无','warn')}<div class="data-note">${t.hrAvg?'平均 '+t.hrAvg+' · 最低 '+t.hrMin+' · 最高 '+t.hrMax+' bpm<br>'+t.hrSamples+' 次采样 · '+fmtT(t.hrStart)+'–'+fmtT(t.hrEnd):'当日无心率数据'}</div></div>
     <div class="metric-card"><div class="metric-head"><span>静息心率</span><span class="metric-icon">❤️</span></div>${metricVal(t.hrResting,'bpm')} ${t.hrResting?pill('正常 60–80'):pill('暂无','warn')}<div class="data-note">${t.hrSamples} 次采样 · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div></div>
     <div class="metric-card"><div class="metric-head"><span>心率变异性 HRV</span><span class="metric-icon">📊</span></div>${metricVal(t.hrv.avg,'ms')} ${t.hrv.avg?pill('良好'):pill('暂无','warn')}<div class="data-note">${t.hrv.avg?`范围 ${t.hrv.min}–${t.hrv.max} ms<br>测量 ${fmtT(t.hrv.start)} / ${fmtT(t.hrv.end)} · ${t.hrv.n} 次`:'今日无数据'}</div></div>
     <div class="metric-card"><div class="metric-head"><span>血氧饱和度</span><span class="metric-icon">🩸</span></div>${metricVal(t.spo2,'%')} ${t.spo2?pill('正常 ≥95%'):pill('暂无','warn')}<div class="data-note">${t.spo2?`${fmtT(t.spo2Start)} / ${fmtT(t.spo2End)} · ${t.spo2N} 次`:'今日无数据'}</div></div>
