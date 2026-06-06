@@ -203,6 +203,11 @@ button{font:inherit}
 .datebar-today:hover{background:var(--green-soft)}
 .datebar-spacer{flex:1}
 .datebar-status{font-size:12px;color:var(--muted)}
+.settings-form{display:grid;gap:14px}
+.settings-form label{display:grid;grid-template-columns:1fr 130px;align-items:center;gap:12px;font-size:14px;color:#4f574d}
+.settings-form input{min-height:38px;padding:0 12px;border:1px solid #dfe4d8;border-radius:8px;background:#fff;color:var(--text);font:inherit;font-size:14px;text-align:right;outline:none}
+.settings-form input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(139,166,107,.16)}
+.trend-row{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--muted)}
 .toast{position:fixed;left:50%;bottom:28px;z-index:20;max-width:420px;padding:12px 18px;border:1px solid #dce5d1;border-radius:8px;background:rgba(255,255,255,.95);color:#3d4933;box-shadow:var(--shadow);opacity:0;pointer-events:none;transform:translate(-50%,14px);transition:opacity .2s,transform .2s}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media(max-width:1180px){.metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-overview,.dashboard-grid,.ai-grid,.two-col-eq,.three-col{grid-template-columns:1fr}}
@@ -221,6 +226,7 @@ button{font:inherit}
       <button class="nav-item" data-view="screen"><span>□</span>屏幕使用</button>
       <button class="nav-item" data-view="workouts"><span>✣</span>运动记录</button>
       <button class="nav-item" data-view="ai"><span>★</span>AI 健康分析</button>
+      <button class="nav-item" data-view="settings"><span>◇</span>目标设置</button>
       <button class="nav-item" data-view="sources"><span>⚙</span>数据源状态</button>
     </nav>
     <div class="plant-card" aria-hidden="true">
@@ -266,6 +272,23 @@ const fmtT = iso => { if(!iso) return '—'; try { return new Date(iso).toLocale
 const fmtMD = iso => { if(!iso) return '—'; try { return new Date(iso).toLocaleDateString('en-CA',{timeZone:'Asia/Shanghai'}).slice(5); } catch(e){ return '—'; } };
 const keyMD = k => k.slice(4,6)+'-'+k.slice(6,8);
 const keyISO = k => k.slice(0,4)+'-'+k.slice(4,6)+'-'+k.slice(6,8);
+
+/* ---------- 目标设置（localStorage 持久化） ---------- */
+const DEFAULT_GOALS = { steps:10000, distanceKm:8, screenMaxMin:360, activeKcal:500, workoutsPerWeek:4 };
+function loadGoals(){ try{ return {...DEFAULT_GOALS, ...JSON.parse(localStorage.getItem('wellora_goals')||'{}')}; }catch(e){ return {...DEFAULT_GOALS}; } }
+function saveGoals(g){ try{ localStorage.setItem('wellora_goals', JSON.stringify(g)); }catch(e){} }
+let GOALS = (typeof localStorage!=='undefined') ? loadGoals() : {...DEFAULT_GOALS};
+
+/* ---------- 近 N 天均值 + 环比 ---------- */
+function windowAvg(M, metric, field, keys, endKey, n){
+  const dates=(M[metric]||{}).dates||{};
+  const idx=keys.indexOf(endKey); if(idx<0) return null;
+  const win=keys.slice(Math.max(0,idx-n+1), idx+1);
+  const vals=win.map(k=>{const e=dates[k]; return e&&e[field]!=null?Number(e[field]):null;}).filter(v=>v!=null && Number.isFinite(v) && v!==0);
+  if(!vals.length) return null;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+function deltaPct(today, avg){ if(today==null||avg==null||avg===0) return null; return Math.round((today-avg)/avg*100); }
 const fullDate = k => `${+k.slice(0,4)}年${+k.slice(4,6)}月${+k.slice(6,8)}日`;
 const weekdayCN = k => '周'+'日一二三四五六'[new Date(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8)).getDay()];
 const kj2kcal = kj => Math.round((kj||0)/4.184);
@@ -314,7 +337,8 @@ function workoutMeta(name){
 }
 
 /* ---------- 原始 JSON → 看板数据结构 ---------- */
-function transform(h, s, selectedKey){
+function transform(h, s, selectedKey, goals){
+  const G = goals || (typeof GOALS!=='undefined' ? GOALS : DEFAULT_GOALS);
   const M = h.metrics || {};
   const datesOf = m => (M[m]||{}).dates || {};
   const entry = (m,k) => datesOf(m)[k] || {};
@@ -356,7 +380,7 @@ function transform(h, s, selectedKey){
   const aeE = entry('active_energy',todayKey);
   const today = {
     steps: Math.round(stepDates[todayKey].sumQty||0),
-    stepsTarget: 10000,
+    stepsTarget: G.steps,
     distance: +(field('walking_running_distance',todayKey,'sumQty')||0).toFixed(2),
     hrResting: rhr!=null ? Math.round(rhr) : null,
     hrSamples: hrE.samples||0,
@@ -456,8 +480,33 @@ function transform(h, s, selectedKey){
   ];
   const aiOverall = Math.round(aiDims.reduce((a,d)=>a+d.score,0)/aiDims.length);
 
+  const avg7 = {
+    steps: windowAvg(M,'step_count','sumQty',keys,todayKey,7),
+    distance: windowAvg(M,'walking_running_distance','sumQty',keys,todayKey,7),
+    activeKJ: windowAvg(M,'active_energy','sumQty',keys,todayKey,7),
+    hrResting: windowAvg(M,'resting_heart_rate','avgQty',keys,todayKey,7),
+    hrAvg: windowAvg(M,'heart_rate','avgQty',keys,todayKey,7),
+    hrv: windowAvg(M,'heart_rate_variability','avgQty',keys,todayKey,7),
+    spo2: windowAvg(M,'blood_oxygen_saturation','avgQty',keys,todayKey,7),
+  };
+  const trends = {
+    steps: deltaPct(today.steps, avg7.steps),
+    distance: deltaPct(today.distance, avg7.distance),
+    activeKcal: deltaPct(kj2kcal(today.activeEnergyKJ), avg7.activeKJ!=null?kj2kcal(avg7.activeKJ):null),
+    hrResting: deltaPct(today.hrResting, avg7.hrResting),
+    hrAvg: deltaPct(today.hrAvg, avg7.hrAvg),
+    hrv: deltaPct(today.hrv.avg, avg7.hrv),
+    spo2: deltaPct(today.spo2, avg7.spo2),
+  };
+  const goalProgress = {
+    steps: Math.round(today.steps/(G.steps||1)*100),
+    distance: Math.round(today.distance/(G.distanceKm||1)*100),
+    activeKcal: Math.round(kj2kcal(today.activeEnergyKJ)/(G.activeKcal||1)*100),
+    screen: today.screenMinutes!=null ? Math.round(today.screenMinutes/(G.screenMaxMin||1)*100) : null,
+  };
   return {
     todayKey, latestKey, isToday, selectedKey: todayKey,
+    avg7, trends, goals: G, goalProgress,
     date: fullDate(todayKey),
     healthAt: fmtT(h.generatedAt), screenAt: s ? fmtT(s.generatedAt) : '—', greet: greeting(h.generatedAt),
     screenAvailable: !!(s && (s.apps||[]).length),
@@ -497,6 +546,8 @@ function donutSVG(pct, color, size){
   return `<svg width="${size}" height="${size}" viewBox="0 0 120 120"><circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="#ecebe4" stroke-width="13"/><circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="13" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${circ*0.25}" stroke-linecap="round"/><text x="${c}" y="${c}" text-anchor="middle" dy="0.36em" font-size="24" font-weight="800" fill="#5f7f42">${pct}</text></svg>`;
 }
 const metricVal = (v,unit,nullText='暂无') => v==null ? `<div class="metric-value" style="font-size:18px;color:var(--muted)">${nullText}</div>` : `<div class="metric-value">${v}<small>${unit}</small></div>`;
+function trendBadge(d, goodWhenUp=true){ if(d==null) return ''; const arrow=d>0?'↑':(d<0?'↓':'→'); let color='#858a7e'; if(goodWhenUp!==null && d!==0){ const good=goodWhenUp?d>0:d<0; color=good?'#5f7f42':'#c07000'; } return `<span style="color:${color};font-weight:700;font-size:12px;margin-left:6px" title="环比近7日均值">${arrow}${Math.abs(d)}%</span>`; }
+function vsAvgNote(avg, unit, fmt){ if(avg==null) return '7日均值 —'; const v=fmt?fmt(avg):Math.round(avg); return `vs 7日均值 ${v}${unit||''}`; }
 
 /* ---------- 视图 ---------- */
 function renderHome(){
@@ -511,20 +562,20 @@ function renderHome(){
   <div class="metrics-grid">
     <div class="metric-card" onclick="nav('steps')">
       <div class="metric-head"><span>步数</span><span class="metric-icon">👣</span></div>
-      ${metricVal(t.steps.toLocaleString(),'步')} ${pill(rate+'% 达标')}
+      ${metricVal(t.steps.toLocaleString(),'步')} ${pill(rate+'% 达标')}${trendBadge(D.trends.steps)}
       <div class="progress-track" style="--value:${Math.min(100,rate)}%;--bar:#8ba66b"><span></span></div>
-      <div class="progress-value" style="font-size:12px;color:var(--muted)">目标 ${t.stepsTarget.toLocaleString()}</div>
+      <div class="progress-value" style="font-size:12px;color:var(--muted)">目标 ${t.stepsTarget.toLocaleString()} · ${vsAvgNote(D.avg7.steps,'',v=>Math.round(v).toLocaleString())}</div>
     </div>
     <div class="metric-card" onclick="nav('steps')">
       <div class="metric-head"><span>步行距离</span><span class="metric-icon">🏃</span></div>
-      ${metricVal(t.distance,'km')} ${pill('今日','info')}
-      <div class="progress-track" style="--value:${Math.min(100,Math.round(t.distance/10*100))}%;--bar:#8aaec4"><span></span></div>
-      <div class="progress-value" style="font-size:12px;color:var(--muted)">参考 10 km</div>
+      ${metricVal(t.distance,'km')} ${pill('今日','info')}${trendBadge(D.trends.distance)}
+      <div class="progress-track" style="--value:${Math.min(100,D.goalProgress.distance)}%;--bar:#8aaec4"><span></span></div>
+      <div class="progress-value" style="font-size:12px;color:var(--muted)">目标 ${D.goals.distanceKm} km · ${vsAvgNote(D.avg7.distance,'km',v=>v.toFixed(1))}</div>
     </div>
     <div class="metric-card" onclick="nav('heart')">
       <div class="metric-head"><span>实时心率</span><span class="metric-icon">💓</span></div>
-      ${metricVal(t.hrAvg,'bpm')} ${t.hrAvg?pill('区间 '+t.hrMin+'–'+t.hrMax):pill('暂无','warn')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrAvg?'最低 '+t.hrMin+' · 最高 '+t.hrMax+(t.hrResting?' · 静息 '+t.hrResting+' bpm':''):t.hrSamples+' 次采样'} · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div>
+      ${metricVal(t.hrAvg,'bpm')} ${t.hrAvg?pill('区间 '+t.hrMin+'–'+t.hrMax):pill('暂无','warn')}${trendBadge(D.trends.hrAvg,null)}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrAvg?'最低 '+t.hrMin+' · 最高 '+t.hrMax+(t.hrResting?' · 静息 '+t.hrResting:'')+(D.avg7.hrAvg?' · 7日均 '+Math.round(D.avg7.hrAvg):''):t.hrSamples+' 次采样'} · ${fmtT(t.hrStart)}–${fmtT(t.hrEnd)}</div>
     </div>
     <div class="metric-card" onclick="nav('heart')">
       <div class="metric-head"><span>心率变异性</span><span class="metric-icon">📊</span></div>
@@ -538,13 +589,13 @@ function renderHome(){
     </div>
     <div class="metric-card">
       <div class="metric-head"><span>活跃能量</span><span class="metric-icon">⚡</span></div>
-      ${metricVal(kj2kcal(t.activeEnergyKJ),'kcal')} ${pill('截至 '+fmtT(t.aeEnd),'info')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.activeEnergyKJ} kJ · ${fmtT(t.aeStart)}–${fmtT(t.aeEnd)}</div>
+      ${metricVal(kj2kcal(t.activeEnergyKJ),'kcal')} ${pill('截至 '+fmtT(t.aeEnd),'info')}${trendBadge(D.trends.activeKcal)}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">目标 ${D.goals.activeKcal} kcal（${D.goalProgress.activeKcal}%）· ${vsAvgNote(D.avg7.activeKJ,' kcal',v=>kj2kcal(v))}</div>
     </div>
     <div class="metric-card" onclick="nav('screen')">
       <div class="metric-head"><span>屏幕使用</span><span class="metric-icon">💻</span></div>
-      ${metricVal(t.screenMinutes,'分钟')} ${t.screenMinutes!=null?pill('实时追踪','info'):pill('无数据','warn')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${D.screenAvailable?D.screenStats.appCount+' 个应用 · 每分钟采样':'当日无屏幕数据'}</div>
+      ${metricVal(t.screenMinutes,'分钟')} ${t.screenMinutes!=null?(D.goalProgress.screen<=100?pill(D.goalProgress.screen+'% 上限'):pill('超限','warn')):pill('无数据','warn')}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${D.screenAvailable?'上限 '+D.goals.screenMaxMin+' 分 · '+D.screenStats.appCount+' 个应用':'当日无屏幕数据'}</div>
     </div>
     <div class="metric-card" onclick="nav('workouts')">
       <div class="metric-head"><span>近期运动</span><span class="metric-icon">🏋️</span></div>
@@ -760,7 +811,49 @@ function errorView(){
     </div>
   </div>`;
 }
-const views = { home:renderHome, steps:renderSteps, heart:renderHeart, sleep:renderSleep, screen:renderScreen, workouts:renderWorkouts, ai:renderAI, sources:renderSources };
+function renderSettings(){
+  const g=GOALS, D=DATA;
+  const a7=(k,unit,fmt)=>{ const v=D&&D.avg7?D.avg7[k]:null; return v==null?'—':(fmt?fmt(v):Math.round(v))+(unit||''); };
+  return `
+  <div class="topbar"><div><h1>目标设置</h1><p>设定判断标准与环比基准 · 保存在本浏览器</p></div></div>
+  <div class="two-col-eq">
+    <div class="card">
+      <div class="section-title"><h2>我的目标</h2></div>
+      <div class="settings-form">
+        <label>每日步数目标 <input type="number" id="g_steps" value="${g.steps}" min="1000" step="500"></label>
+        <label>每日距离 (km) <input type="number" id="g_dist" value="${g.distanceKm}" min="1" step="0.5"></label>
+        <label>每日活跃能量 (kcal) <input type="number" id="g_kcal" value="${g.activeKcal}" min="50" step="50"></label>
+        <label>屏幕使用上限 (分钟) <input type="number" id="g_screen" value="${g.screenMaxMin}" min="30" step="30"></label>
+        <label>每周运动次数 <input type="number" id="g_workout" value="${g.workoutsPerWeek}" min="1" step="1"></label>
+      </div>
+      <div style="margin-top:18px;display:flex;gap:10px">
+        <button class="action" onclick="saveGoalsFromForm()">保存目标</button>
+        <button class="action secondary" onclick="resetGoals()">恢复默认</button>
+      </div>
+      <div class="data-note" style="margin-top:14px">保存后各页面的达标判断与环比基准立即更新。存于浏览器 localStorage。</div>
+    </div>
+    <div class="card">
+      <div class="section-title"><h2>近 7 日对比基准</h2></div>
+      <div style="font-size:13px;color:#555c52;line-height:1.9">
+        <p style="margin:0 0 12px">环比趋势以<strong>近 7 天均值</strong>为基准，各指标卡的 ↑↓% 即今日相对该均值的变化。</p>
+        <div style="display:grid;gap:8px">
+          <div style="padding:10px;background:var(--green-soft);border-radius:6px">步数 7日均值：<strong>${a7('steps','',v=>Math.round(v).toLocaleString())}</strong></div>
+          <div style="padding:10px;background:#f5f0e7;border-radius:6px">距离 7日均值：<strong>${a7('distance',' km',v=>v.toFixed(1))}</strong></div>
+          <div style="padding:10px;background:var(--green-soft);border-radius:6px">实时心率 7日均值：<strong>${a7('hrAvg',' bpm')}</strong></div>
+          <div style="padding:10px;background:#f5f0e7;border-radius:6px">活跃能量 7日均值：<strong>${a7('activeKJ',' kcal',v=>kj2kcal(v))}</strong></div>
+        </div>
+        <p style="margin:12px 0 0;font-size:12px;color:var(--muted)">绿色 ↑=高于均值（步数/距离/能量更好）；屏幕超过上限显示橙色「超限」。</p>
+      </div>
+    </div>
+  </div>`;
+}
+function saveGoalsFromForm(){
+  const num=(id,def)=>{ const el=document.getElementById(id); const v=el?parseFloat(el.value):NaN; return Number.isFinite(v)&&v>0?v:def; };
+  GOALS={ steps:Math.round(num('g_steps',10000)), distanceKm:num('g_dist',8), activeKcal:Math.round(num('g_kcal',500)), screenMaxMin:Math.round(num('g_screen',360)), workoutsPerWeek:Math.round(num('g_workout',4)) };
+  saveGoals(GOALS); applyDate(selectedKey); showToast('目标已保存，判断标准已更新');
+}
+function resetGoals(){ GOALS={...DEFAULT_GOALS}; saveGoals(GOALS); applyDate(selectedKey); showToast('已恢复默认目标'); }
+const views = { home:renderHome, steps:renderSteps, heart:renderHeart, sleep:renderSleep, screen:renderScreen, workouts:renderWorkouts, ai:renderAI, settings:renderSettings, sources:renderSources };
 
 function nav(id){
   currentView=id;
@@ -803,7 +896,7 @@ async function boot(){
 async function applyDate(k){
   selectedKey = k;
   const sc = await fetchScreen(k);
-  DATA = transform(rawHealth, sc.data, k);
+  DATA = transform(rawHealth, sc.data, k, GOALS);
   DATA.mode = runMode;
   DATA.screenLive = sc.live;
   renderDatebar();
