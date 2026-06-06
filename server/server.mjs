@@ -65,12 +65,33 @@ const server = http.createServer(async (req, res)=>{
   const p = new URL(req.url, 'http://localhost').pathname;
   try {
     if(p === '/api/health') return sendJSONFile(res, path.join(PROC, 'autosync-summary.json'));
-    if(p === '/api/screen') return sendJSONFile(res, path.join(PROC, 'screen-time-latest.json'));
+    if(p === '/api/screen'){
+      const date = new URL(req.url, 'http://localhost').searchParams.get('date');
+      if(!date) return sendJSONFile(res, path.join(PROC, 'screen-time-latest.json'));
+      const safe = date.replace(/[^0-9-]/g, '');               // 防注入：只留数字与连字符
+      const rows = await sqliteJSON(
+        "SELECT app_name, bundle_id, duration_seconds, segment_count, first_seen_at, last_seen_at "+
+        "FROM screen_time_daily_app_summary WHERE local_date = '"+safe+"' ORDER BY duration_seconds DESC;");
+      const totalSeconds = rows.reduce((a,r)=>a+(r.duration_seconds||0), 0);
+      const apps = rows.map(r=>({
+        appName:r.app_name, bundleId:r.bundle_id,
+        durationSeconds:r.duration_seconds, durationMinutes:+(r.duration_seconds/60).toFixed(1),
+        segmentCount:r.segment_count, firstSeenAt:r.first_seen_at, lastSeenAt:r.last_seen_at,
+      }));
+      return send(res, 200, JSON.stringify({
+        date:safe, timezone:'Asia/Shanghai', generatedAt:new Date().toISOString(),
+        source:'sqlite-daily-summary', totalSeconds, totalMinutes:+(totalSeconds/60).toFixed(1), apps,
+      }));
+    }
     if(p === '/api/screen-history'){
       const days = await sqliteJSON(
         "SELECT local_date, SUM(duration_seconds) AS total_seconds, COUNT(DISTINCT app_name) AS app_count "+
         "FROM screen_time_daily_app_summary GROUP BY local_date ORDER BY local_date DESC LIMIT 14;");
       return send(res, 200, JSON.stringify({days}));
+    }
+    if(p === '/api/screen-dates'){
+      const rows = await sqliteJSON("SELECT DISTINCT local_date FROM screen_time_daily_app_summary ORDER BY local_date;");
+      return send(res, 200, JSON.stringify({dates:rows.map(r=>r.local_date)}));
     }
     if(p === '/api/status'){
       return send(res, 200, JSON.stringify({

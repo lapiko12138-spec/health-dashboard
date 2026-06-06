@@ -192,6 +192,17 @@ button{font:inherit}
 .recommendation-list{display:grid;gap:12px;margin-top:14px}
 .rec-item{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:flex-start;font-size:13px;color:#555c52}
 .rec-icon{font-size:16px;margin-top:2px}
+.datebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 20px rgba(88,79,60,.04)}
+.datebar-label{font-size:12px;font-weight:700;color:#5f7f42;display:inline-flex;align-items:center;gap:5px}
+.datebar select{min-height:34px;padding:0 10px;border:1px solid #dfe4d8;border-radius:8px;background:#fff;color:var(--text);font:inherit;font-size:13px;cursor:pointer;outline:none}
+.datebar select:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(139,166,107,.16)}
+.datebar-nav{width:32px;height:32px;border:1px solid #dfe4d8;border-radius:8px;background:#fff;color:#5f7f42;cursor:pointer;font-size:16px;line-height:1;display:grid;place-items:center}
+.datebar-nav:hover:not(:disabled){background:var(--green-soft)}
+.datebar-nav:disabled{opacity:.35;cursor:not-allowed}
+.datebar-today{min-height:32px;padding:0 12px;border:1px solid #cad8bc;border-radius:8px;background:#f8fbf4;color:var(--green-dark);font-size:12px;font-weight:700;cursor:pointer}
+.datebar-today:hover{background:var(--green-soft)}
+.datebar-spacer{flex:1}
+.datebar-status{font-size:12px;color:var(--muted)}
 .toast{position:fixed;left:50%;bottom:28px;z-index:20;max-width:420px;padding:12px 18px;border:1px solid #dce5d1;border-radius:8px;background:rgba(255,255,255,.95);color:#3d4933;box-shadow:var(--shadow);opacity:0;pointer-events:none;transform:translate(-50%,14px);transition:opacity .2s,transform .2s}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 @media(max-width:1180px){.metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.home-overview,.dashboard-grid,.ai-grid,.two-col-eq,.three-col{grid-template-columns:1fr}}
@@ -227,6 +238,7 @@ button{font:inherit}
     </button>
   </aside>
   <main class="main">
+    <div id="datebar" class="datebar"></div>
     <section id="app" class="view" aria-live="polite"></section>
   </main>
 </div>
@@ -244,13 +256,16 @@ button{font:inherit}
 
 const app = document.querySelector('#app');
 const toast = document.querySelector('#toast');
+const datebar = document.querySelector('#datebar');
 let DATA = null;
 let currentView = 'home';
+let rawHealth = null, healthKeys = [], latestKey = null, selectedKey = null, runMode = 'snapshot';
 
 /* ---------- 格式化 / 时区（统一北京时间 Asia/Shanghai） ---------- */
 const fmtT = iso => { if(!iso) return '—'; try { return new Date(iso).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}); } catch(e){ return '—'; } };
 const fmtMD = iso => { if(!iso) return '—'; try { return new Date(iso).toLocaleDateString('en-CA',{timeZone:'Asia/Shanghai'}).slice(5); } catch(e){ return '—'; } };
 const keyMD = k => k.slice(4,6)+'-'+k.slice(6,8);
+const keyISO = k => k.slice(0,4)+'-'+k.slice(4,6)+'-'+k.slice(6,8);
 const fullDate = k => `${+k.slice(0,4)}年${+k.slice(4,6)}月${+k.slice(6,8)}日`;
 const weekdayCN = k => '周'+'日一二三四五六'[new Date(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8)).getDay()];
 const kj2kcal = kj => Math.round((kj||0)/4.184);
@@ -299,7 +314,7 @@ function workoutMeta(name){
 }
 
 /* ---------- 原始 JSON → 看板数据结构 ---------- */
-function transform(h, s){
+function transform(h, s, selectedKey){
   const M = h.metrics || {};
   const datesOf = m => (M[m]||{}).dates || {};
   const entry = (m,k) => datesOf(m)[k] || {};
@@ -307,17 +322,21 @@ function transform(h, s){
 
   const stepDates = datesOf('step_count');
   const keys = Object.keys(stepDates).sort();
-  const todayKey = keys[keys.length-1];
-  const last5 = keys.slice(-5);
+  const latestKey = keys[keys.length-1];
+  const todayKey = (selectedKey && stepDates[selectedKey]) ? selectedKey : latestKey;
+  const isToday = todayKey === latestKey;
+  const selIdx = keys.indexOf(todayKey);
+  const last5 = keys.slice(Math.max(0, selIdx-4), selIdx+1);
 
   /* 近5日步数 / 距离 / 运动时长 */
   const steps5d = last5.map(k => ({
     date: keyMD(k),
-    label: k===todayKey ? '今天' : weekdayCN(k),
+    label: k===latestKey ? '今天' : weekdayCN(k),
     steps: Math.round(stepDates[k].sumQty||0),
     dist: +(field('walking_running_distance',k,'sumQty')||0).toFixed(2),
     exMin: Math.round(field('apple_exercise_time',k,'sumQty')||0),
-    partial: k===todayKey,
+    partial: k===latestKey,
+    selected: k===todayKey,
   }));
 
   const stepVals = steps5d.map(d=>d.steps);
@@ -353,7 +372,7 @@ function transform(h, s){
     spo2Start: entry('blood_oxygen_saturation',todayKey).start, spo2End: entry('blood_oxygen_saturation',todayKey).end,
     activeEnergyKJ: +(field('active_energy',todayKey,'sumQty')||0).toFixed(1),
     aeStart: aeE.start, aeEnd: aeE.end,
-    screenMinutes: Math.round(s.totalMinutes||0),
+    screenMinutes: s ? Math.round(s.totalMinutes||0) : null,
   };
 
   /* 运动记录 */
@@ -381,7 +400,7 @@ function transform(h, s){
   const workoutRange = items.length ? [fmtMD(sortedByStart[0].start), fmtMD(sortedByStart[sortedByStart.length-1].start)] : ['—','—'];
 
   /* 屏幕使用 */
-  const apps = (s.apps||[]).map(a=>{
+  const apps = ((s && s.apps) || []).map(a=>{
     const m = appMeta(a.bundleId);
     return { name:a.appName, bundleId:a.bundleId, emoji:m.emoji, color:m.color, cat:m.cat, min:+(a.durationMinutes||0).toFixed(1) };
   }).filter(a=>a.min>0).sort((a,b)=>b.min-a.min);
@@ -429,14 +448,16 @@ function transform(h, s){
     {label:'运动活跃度', score: Math.min(100, workoutTotals.count*12+10), bar:'#8ba66b', note:`近期 ${workoutTotals.count} 次运动`},
     {label:'心血管健康', score: today.hrResting?(today.hrResting<=75?82:70):45, bar:'#ff746f', note: today.hrResting?`静息 ${today.hrResting}bpm · HRV ${today.hrv.avg||'—'}ms`:'数据不足'},
     {label:'步行目标',   score: stepScore, bar:'#f2b866', note:`今日 ${today.steps.toLocaleString()} 步`},
-    {label:'屏幕管理',   score: Math.max(30, 100-Math.round(today.screenMinutes/7)), bar:'#9a91ed', note:`${today.screenMinutes} 分钟 · AI ${screenStats.aiMin} 分`},
+    {label:'屏幕管理',   score: today.screenMinutes!=null ? Math.max(30, 100-Math.round(today.screenMinutes/7)) : 50, bar:'#9a91ed', note: today.screenMinutes!=null ? `${today.screenMinutes} 分钟 · AI ${screenStats.aiMin} 分` : '该日期无屏幕数据'},
     {label:'睡眠数据',   score: sleep.todayHasData?80:40, bar:'#858a7e', note: sleep.todayHasData?'今日有记录':'数据中断，无法评估'},
   ];
   const aiOverall = Math.round(aiDims.reduce((a,d)=>a+d.score,0)/aiDims.length);
 
   return {
-    todayKey, date: fullDate(todayKey),
-    healthAt: fmtT(h.generatedAt), screenAt: fmtT(s.generatedAt), greet: greeting(h.generatedAt),
+    todayKey, latestKey, isToday, selectedKey: todayKey,
+    date: fullDate(todayKey),
+    healthAt: fmtT(h.generatedAt), screenAt: s ? fmtT(s.generatedAt) : '—', greet: greeting(h.generatedAt),
+    screenAvailable: !!(s && (s.apps||[]).length),
     today, steps5d, stepStats,
     workouts, workoutTotals, workoutTypes, workoutTop, workoutRange,
     apps, cats, screenStats, sleep, watchWarn, advice, aiDims, aiOverall,
@@ -448,14 +469,18 @@ function stepBars(days, maxH){
   const max = Math.max(...days.map(d=>d.steps), 1);
   return days.map(d=>{
     const hgt = Math.round(d.steps/max*maxH);
-    const dash = d.partial ? 'border:2px dashed #8ba66b;border-bottom:0;opacity:.7' : '';
-    return `<div class="bar-col"><div class="bar-col-val">${(d.steps/1000).toFixed(1)}k</div><div class="bar-col-inner"><div class="bar-v" style="height:${hgt}px;background:${d.partial?'#b5cfa0':'#8ba66b'};${dash}"></div></div><div class="bar-col-label">${d.label}</div></div>`;
+    const dash = d.partial ? 'border:2px dashed #8ba66b;border-bottom:0;opacity:.7;' : '';
+    const sel = d.selected ? 'outline:2px solid #5f7f42;outline-offset:1px;' : '';
+    const bg = d.selected ? '#5f7f42' : (d.partial ? '#b5cfa0' : '#8ba66b');
+    return `<div class="bar-col"><div class="bar-col-val">${(d.steps/1000).toFixed(1)}k</div><div class="bar-col-inner"><div class="bar-v" style="height:${hgt}px;background:${bg};${dash}${sel}"></div></div><div class="bar-col-label" style="${d.selected?'color:#5f7f42;font-weight:700':''}">${d.label}</div></div>`;
   }).join('');
 }
 function distBars(days, max, maxH){
   return days.map(d=>{
     const hgt = Math.round(d.dist/max*maxH);
-    return `<div class="bar-col"><div class="bar-col-val">${d.dist}</div><div class="bar-col-inner"><div class="bar-v" style="height:${hgt}px;background:${d.partial?'#a8c8d8':'#8aaec4'};${d.partial?'opacity:.7':''}"></div></div><div class="bar-col-label">${d.label}</div></div>`;
+    const sel = d.selected ? 'outline:2px solid #5f7f42;outline-offset:1px;' : '';
+    const bg = d.selected ? '#5f7f42' : (d.partial ? '#a8c8d8' : '#8aaec4');
+    return `<div class="bar-col"><div class="bar-col-val">${d.dist}</div><div class="bar-col-inner"><div class="bar-v" style="height:${hgt}px;background:${bg};${d.partial?'opacity:.7;':''}${sel}"></div></div><div class="bar-col-label" style="${d.selected?'color:#5f7f42;font-weight:700':''}">${d.label}</div></div>`;
   }).join('');
 }
 function appBars(apps, maxMin){
@@ -475,8 +500,8 @@ function renderHome(){
   const D=DATA, t=D.today, rate=Math.round(t.steps/t.stepsTarget*100);
   return `
   <div class="topbar">
-    <div><h1>${D.greet}，zhangjiahui 👋</h1>
-      <p>${D.date} · 健康数据更新于 ${D.healthAt} · 屏幕数据更新于 ${D.screenAt}（北京时间）</p></div>
+    <div><h1>${D.isToday ? D.greet+'，zhangjiahui 👋' : '📅 '+D.date+' · 历史回看'}</h1>
+      <p>${D.date} · ${D.isToday?'最新数据':'历史回看'} · 健康更新于 ${D.healthAt}${D.screenAvailable?' · 屏幕 '+D.screenAt:' · 当日无屏幕数据'}（北京时间）</p></div>
     <div class="toolbar">${DATA.mode==='live'?'<span class="status-pill" style="background:#edf3e7;color:#5f7f42">● 本地实时</span>':'<span class="status-pill warn">● 静态快照</span>'}<button class="action secondary" onclick="boot()">↻ 重新读取</button></div>
   </div>
   ${D.watchWarn?`<div class="info-banner" style="margin-bottom:20px"><span>⚠️</span><div>Apple Watch 心率、睡眠、HRV 等指标近期同步受限，部分日期无数据。步数与距离同步正常。<br><span class="data-note">如需恢复：检查 Health Auto Export 权限及 Apple Watch 同步设置。</span></div></div>`:''}
@@ -515,8 +540,8 @@ function renderHome(){
     </div>
     <div class="metric-card" onclick="nav('screen')">
       <div class="metric-head"><span>屏幕使用</span><span class="metric-icon">💻</span></div>
-      ${metricVal(t.screenMinutes,'分钟')} ${pill('实时追踪','info')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${D.screenStats.appCount} 个应用 · 每分钟采样</div>
+      ${metricVal(t.screenMinutes,'分钟')} ${t.screenMinutes!=null?pill('实时追踪','info'):pill('无数据','warn')}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${D.screenAvailable?D.screenStats.appCount+' 个应用 · 每分钟采样':'当日无屏幕数据'}</div>
     </div>
     <div class="metric-card" onclick="nav('workouts')">
       <div class="metric-head"><span>近期运动</span><span class="metric-icon">🏋️</span></div>
@@ -543,8 +568,8 @@ function renderHome(){
   </div>
   <div class="dashboard-grid">
     <div class="chart-panel">
-      <div class="section-title"><h2>今日屏幕占比（Top 5）</h2><button class="action secondary" style="min-height:32px;padding:0 12px;font-size:12px" onclick="nav('screen')">查看全部</button></div>
-      <div class="app-bar-list">${appBars(D.apps.slice(0,5), D.apps[0]?D.apps[0].min:1)}</div>
+      <div class="section-title"><h2>屏幕占比（Top 5）</h2><button class="action secondary" style="min-height:32px;padding:0 12px;font-size:12px" onclick="nav('screen')">查看全部</button></div>
+      <div class="app-bar-list">${D.screenAvailable?appBars(D.apps.slice(0,5), D.apps[0].min):'<div class="data-note" style="padding:20px 0;text-align:center">该日期暂无屏幕数据（采集自 06-06 起）</div>'}</div>
     </div>
     <div class="chart-panel">
       <div class="section-title"><h2>最近运动</h2><button class="action secondary" style="min-height:32px;padding:0 12px;font-size:12px" onclick="nav('workouts')">全部记录</button></div>
@@ -631,7 +656,11 @@ function renderSleep(){
 }
 
 function renderScreen(){
-  const D=DATA, total=D.today.screenMinutes||1, ss=D.screenStats;
+  const D=DATA;
+  if(!D.screenAvailable){
+    return `<div class="topbar"><div><h1>屏幕使用</h1><p>${D.date} · 北京时间</p></div></div><div class="card" style="display:grid;place-items:center;text-align:center;min-height:300px"><div><div style="font-size:48px;margin-bottom:12px">📭</div><div style="font-size:15px;font-weight:700;margin-bottom:8px">该日期暂无屏幕数据</div><div style="font-size:13px;color:var(--muted);line-height:1.7">屏幕采集自 2026-06-06 起。${D.mode!=='live'?'<br>在线演示仅含快照日；完整历史请用本地后端。':'<br>请选择 06-06 或更新的日期。'}</div></div></div>`;
+  }
+  const total=D.today.screenMinutes||1, ss=D.screenStats;
   return `
   <div class="topbar"><div><h1>屏幕使用</h1><p>${D.date} · 每分钟采样 · 更新于 ${D.screenAt}（北京时间）</p></div></div>
   <div class="metrics-grid" style="grid-template-columns:repeat(4,minmax(0,1fr))">
@@ -744,19 +773,53 @@ async function fetchJSON(primary, fallback){
   }
   throw new Error('数据源不可达');
 }
+async function fetchScreen(k){
+  const iso = keyISO(k);
+  try{ const r=await fetch(`/api/screen?date=${iso}`,{cache:'no-store'}); if(r.ok){ const j=await r.json(); if(j && j.apps && j.apps.length) return {data:j, live:true}; } }catch(e){}
+  if(k===latestKey){ try{ const r=await fetch('/api/screen',{cache:'no-store'}); if(r.ok){ const j=await r.json(); if(j && j.apps && j.apps.length) return {data:j, live:true}; } }catch(e){} }
+  try{ const r=await fetch('data/screen-time-latest.json',{cache:'no-store'}); if(r.ok){ const j=await r.json(); if((j.date||'').replace(/-/g,'')===k) return {data:j, live:false}; } }catch(e){}
+  return {data:null, live:false};
+}
 async function boot(){
   app.innerHTML=loadingView();
   try{
     const h = await fetchJSON('/api/health','data/autosync-summary.json');
-    const s = await fetchJSON('/api/screen','data/screen-time-latest.json');
-    DATA=transform(h.json, s.json);
-    DATA.mode = h.live ? 'live' : 'snapshot';
-    nav(currentView);
-    showToast(h.live ? '已连接本地后端 · 实时数据' : '静态快照模式 · GitHub 演示');
+    rawHealth = h.json; runMode = h.live ? 'live' : 'snapshot';
+    const sd = (rawHealth.metrics && rawHealth.metrics.step_count) ? rawHealth.metrics.step_count.dates : {};
+    healthKeys = Object.keys(sd).sort();
+    latestKey = healthKeys[healthKeys.length-1];
+    if(!selectedKey || !healthKeys.includes(selectedKey)) selectedKey = latestKey;
+    await applyDate(selectedKey);
+    showToast(runMode==='live' ? '已连接本地后端 · 实时数据' : '静态快照模式 · GitHub 演示');
   }catch(e){
     console.error('加载失败：',e);
     app.innerHTML=errorView();
   }
+}
+async function applyDate(k){
+  selectedKey = k;
+  const sc = await fetchScreen(k);
+  DATA = transform(rawHealth, sc.data, k);
+  DATA.mode = runMode;
+  DATA.screenLive = sc.live;
+  renderDatebar();
+  nav(currentView);
+}
+function pickDate(k){ if(k!==selectedKey) applyDate(k); }
+function shiftDate(d){ const i=healthKeys.indexOf(selectedKey)+d; if(i>=0 && i<healthKeys.length) applyDate(healthKeys[i]); }
+function renderDatebar(){
+  if(!datebar || !healthKeys.length) return;
+  const i = healthKeys.indexOf(selectedKey);
+  const opts = healthKeys.slice().reverse().map(k=>`<option value="${k}" ${k===selectedKey?'selected':''}>${keyMD(k)}　${k===latestKey?'最新':weekdayCN(k)}</option>`).join('');
+  const sStat = DATA ? (!DATA.screenAvailable ? '屏幕：无数据' : (DATA.screenLive===false ? '屏幕：快照' : '屏幕：实时')) : '';
+  datebar.innerHTML = `
+    <span class="datebar-label">📅 查看日期</span>
+    <button class="datebar-nav" onclick="shiftDate(-1)" ${i<=0?'disabled':''} title="前一天">‹</button>
+    <select onchange="pickDate(this.value)">${opts}</select>
+    <button class="datebar-nav" onclick="shiftDate(1)" ${i>=healthKeys.length-1?'disabled':''} title="后一天">›</button>
+    ${selectedKey!==latestKey?`<button class="datebar-today" onclick="pickDate('${latestKey}')">回到最新</button>`:''}
+    <span class="datebar-spacer"></span>
+    <span class="datebar-status">${DATA?((DATA.isToday?'📡 最新':'🕘 历史回看')+' · '+sStat):''}</span>`;
 }
 
 document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>nav(b.dataset.view)));
