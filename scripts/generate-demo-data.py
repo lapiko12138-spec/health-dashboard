@@ -41,6 +41,20 @@ def synth(name, e):
         e['sumQty'] = float(random.randint(0, 60))
 
 
+def fake_app(bundle_id, app_name, idx):
+    """把真实 app 名 / bundleId 替换为通用名，避免公开真实软件清单。"""
+    s = ((bundle_id or '') + ' ' + (app_name or '')).lower()
+    if any(k in s for k in ['chrome', 'safari', 'browser', 'quark']):                       return ('Web Browser', 'demo.browser')
+    if any(k in s for k in ['openai', 'anthropic', 'claude', 'codex', 'chatgpt', 'atlas']): return ('AI Assistant', 'demo.ai')
+    if any(k in s for k in ['tencent', 'wechat', '微信']):                                   return ('Messenger', 'demo.social')
+    if any(k in s for k in ['terminal', '终端']):                                             return ('Terminal', 'demo.terminal')
+    if any(k in s for k in ['figma', 'design']):                                              return ('Design Tool', 'demo.design')
+    if any(k in s for k in ['finder', '访达']):                                               return ('File Manager', 'demo.files')
+    if any(k in s for k in ['shadowrocket', 'clash']):                                        return ('Network Tool', 'demo.network')
+    if any(k in s for k in ['preview', '预览', 'health', 'systempreferences', '系统']):       return ('Utility', 'demo.util')
+    return (f'App {idx + 1}', f'demo.app{idx + 1}')
+
+
 def main():
     # ---- 健康 ----
     h = json.load(open(os.path.join(SRC, 'autosync-summary.json')))
@@ -79,7 +93,9 @@ def main():
     s['_demo'] = True
     s['_note'] = 'Synthetic demo data for public display — NOT real usage.'
     total = 0
-    for a in s.get('apps', []):
+    for i, a in enumerate(s.get('apps', [])):
+        nm, bid = fake_app(a.get('bundleId'), a.get('appName'), i)
+        a['appName'] = nm; a['bundleId'] = bid
         mins = round(random.uniform(3, 110), 1)
         a['durationMinutes'] = mins; a['durationSeconds'] = int(mins * 60); a['segmentCount'] = random.randint(1, 90)
         total += mins
