@@ -1,0 +1,9 @@
+node_modules/
+logs/*.log
+*.log
+.DS_Store
+.env
+.env.*
+# SQLite 临时文件（如误复制进项目）
+*.sqlite-shm
+*.sqlite-wal

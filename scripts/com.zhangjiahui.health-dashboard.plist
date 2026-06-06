@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zhangjiahui.health-dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/zhangjiahui/hackathon/health-dashboard/server/server.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/zhangjiahui/hackathon/health-dashboard</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PORT</key>
+    <string>4173</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/zhangjiahui/hackathon/health-dashboard/logs/server.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/zhangjiahui/hackathon/health-dashboard/logs/server.err.log</string>
+</dict>
+</plist>
