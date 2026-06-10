@@ -15,10 +15,11 @@
  */
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');                       // 仓库根：index.html, data/
@@ -59,6 +60,80 @@ function runRefresh(){
       execFile('npm', ['run','screen:sample'], {cwd:HEALTH_ROOT, timeout:60000}, ()=>resolve());
     });
   });
+}
+
+// ── Sleep score API ──────────────────────────────────────────────────────────
+const SLEEP_DIR = `${process.env.HOME}/Library/Mobile Documents/iCloud~com~ifunography~HealthExport/Documents/AutoSync/HealthMetrics/sleep_analysis`;
+const APPLE_EPOCH_MS = new Date('2001-01-01T00:00:00Z').getTime();
+let sleepCache = null;
+const SLEEP_CACHE_TTL = 5 * 60 * 1000;
+
+function decodeHae(filePath) {
+  const tmp = path.join(mkdtempSync(path.join(tmpdir(), 'hae-')), 'out.json');
+  try {
+    execFileSync('compression_tool', ['-decode','-a','lzfse','-i',filePath,'-o',tmp],
+      { stdio:'ignore', timeout:5000 });
+    return (JSON.parse(readFileSync(tmp,'utf8')).data) ?? [];
+  } catch { return []; }
+  finally { try { rmSync(path.dirname(tmp),{recursive:true}); } catch {} }
+}
+
+function calcSleepScore(hrs) {
+  if (hrs === null || hrs < 2 || hrs > 13) return null;
+  if (hrs >= 7 && hrs <= 9)  return Math.min(100, Math.round(85 + (hrs-7)/2*15));
+  if (hrs >= 6 && hrs < 7)   return Math.round(70 + (hrs-6)*15);
+  if (hrs >= 5 && hrs < 6)   return Math.round(55 + (hrs-5)*15);
+  if (hrs >= 4 && hrs < 5)   return Math.round(40 + (hrs-4)*15);
+  if (hrs >= 2 && hrs < 4)   return Math.round(20 + (hrs-2)*10);
+  if (hrs > 9 && hrs <= 13)  return Math.max(60, Math.round(85 - (hrs-9)*6));
+  return null;
+}
+
+function buildSleepData() {
+  let files = [];
+  try { files = readdirSync(SLEEP_DIR).filter(f=>f.endsWith('.hae')).sort(); }
+  catch { return { days:[], latest:null }; }
+
+  const seen = new Set(), allSamples = [];
+  for (const f of files) {
+    for (const s of decodeHae(path.join(SLEEP_DIR, f))) {
+      const k = `${s.start}-${s.end}`;
+      if (!seen.has(k)) { seen.add(k); allSamples.push(s); }
+    }
+  }
+
+  const byDate = {};
+  for (const s of allSamples) {
+    const ts = s.end ?? s.start; if (!ts) continue;
+    const cstDate = new Date(APPLE_EPOCH_MS + ts*1000 + 8*3600000).toISOString().slice(0,10);
+    if (!byDate[cstDate]) byDate[cstDate] = { total:0, deep:0, rem:0, core:0, awake:0 };
+    const d = byDate[cstDate];
+    d.total += s.totalSleep ?? 0;
+    d.deep  += s.deep   ?? 0;
+    d.rem   += s.rem    ?? 0;
+    d.core  += s.core   ?? 0;
+    d.awake += s.awake  ?? 0;
+  }
+
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const dt = new Date(); dt.setDate(dt.getDate()-i);
+    const key = dt.toISOString().slice(0,10);
+    const entry = byDate[key];
+    const hrs = entry ? Math.round(entry.total*10)/10 : null;
+    days.push({
+      date: `${dt.getMonth()+1}/${String(dt.getDate()).padStart(2,'0')}`,
+      hrs, score: calcSleepScore(hrs),
+      stages: entry ? {
+        deep:  Math.round(entry.deep*10)/10,
+        rem:   Math.round(entry.rem*10)/10,
+        core:  Math.round(entry.core*10)/10,
+        awake: Math.round(entry.awake*10)/10,
+      } : null,
+    });
+  }
+  const latest = [...days].reverse().find(d=>d.score!==null) ?? null;
+  return { days, latest };
 }
 
 const server = http.createServer(async (req, res)=>{
@@ -102,6 +177,7 @@ const server = http.createServer(async (req, res)=>{
       }));
     }
     if(p === '/api/refresh' && req.method === 'POST'){ await runRefresh(); return send(res, 200, JSON.stringify({refreshed:true})); }
+    if(p === '/api/sleep-scores'){ const now=Date.now(); if(!sleepCache||now-sleepCache.ts>SLEEP_CACHE_TTL) sleepCache={ts:now,data:buildSleepData()}; return send(res, 200, JSON.stringify(sleepCache.data)); }
 
     // 静态文件（限制在仓库根内，防目录穿越）
     const rel = decodeURIComponent(p === '/' ? '/index.html' : p);

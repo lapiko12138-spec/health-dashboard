@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Wellora 健康面板 · zhangjiahui</title>
+<title>Wellora 健康面板</title>
 <style>
 :root {
   --bg: #f8f6f1;
@@ -238,8 +238,8 @@ button{font:inherit}
       <p>保持热爱，奔赴山海</p>
     </div>
     <button class="profile" type="button">
-      <span class="avatar">Z</span>
-      <span><strong>zhangjiahui</strong><small>数据接入中</small></span>
+      <span class="avatar">W</span>
+      <span><strong>Wellora 用户</strong><small>数据接入中</small></span>
       <span class="chevron">⌄</span>
     </button>
   </aside>
@@ -263,7 +263,7 @@ button{font:inherit}
 const app = document.querySelector('#app');
 const toast = document.querySelector('#toast');
 const datebar = document.querySelector('#datebar');
-let DATA = null;
+let DATA = null, rawSleep = null;
 let currentView = 'home';
 let rawHealth = null, healthKeys = [], latestKey = null, selectedKey = null, runMode = 'snapshot';
 
@@ -554,7 +554,7 @@ function renderHome(){
   const D=DATA, t=D.today, rate=Math.round(t.steps/t.stepsTarget*100);
   return `
   <div class="topbar">
-    <div><h1>${D.isToday ? D.greet+'，zhangjiahui 👋' : '📅 '+D.date+' · 历史回看'}</h1>
+    <div><h1>${D.isToday ? D.greet+' 👋' : '📅 '+D.date+' · 历史回看'}</h1>
       <p>${D.date} · ${D.isToday?'最新数据':'历史回看'} · 健康更新于 ${D.healthAt}${D.screenAvailable?' · 屏幕 '+D.screenAt:' · 当日无屏幕数据'}（北京时间）</p></div>
     <div class="toolbar">${DATA.mode==='live'?'<span class="status-pill" style="background:#edf3e7;color:#5f7f42">● 本地实时</span>':'<span class="status-pill warn">● 静态快照</span>'}<button class="action secondary" onclick="boot()">↻ 重新读取</button></div>
   </div>
@@ -582,10 +582,10 @@ function renderHome(){
       ${metricVal(t.hrv.avg,'ms')} ${t.hrv.avg?pill('良好'):pill('暂无','warn')}
       <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.hrv.avg?`范围 ${t.hrv.min}–${t.hrv.max} ms · ${t.hrv.n} 次`:'今日无数据'}</div>
     </div>
-    <div class="metric-card" onclick="nav('heart')">
-      <div class="metric-head"><span>血氧饱和度</span><span class="metric-icon">🩸</span></div>
-      ${metricVal(t.spo2,'%')} ${t.spo2?pill('正常'):pill('暂无','warn')}
-      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${t.spo2?`${fmtT(t.spo2Start)} 测量 · ${t.spo2N} 次`:'今日无数据'}</div>
+    <div class="metric-card" onclick="nav('sleep')">
+      <div class="metric-head"><span>睡眠得分</span><span class="metric-icon">🌙</span></div>
+      ${D.sleepScore!=null?metricVal(D.sleepScore,'分'):metricVal(null,'')} ${D.sleepScore!=null?(D.sleepScore>=85?pill('优质'):D.sleepScore>=70?pill('良好','info'):pill('待改善','warn')):pill('暂无','warn')}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted)">${D.sleepHrs!=null?`${D.sleepHrs}h · ${D.sleepDate}`:'今日无数据'}</div>
     </div>
     <div class="metric-card">
       <div class="metric-head"><span>活跃能量</span><span class="metric-icon">⚡</span></div>
@@ -688,24 +688,92 @@ function renderHeart(){
 }
 
 function renderSleep(){
-  const D=DATA, last=D.sleep.last;
-  return `
-  <div class="topbar"><div><h1>睡眠记录</h1><p>${D.date} · Apple Watch 数据 · 北京时间</p></div></div>
-  ${!D.sleep.todayHasData?`<div class="info-banner" style="margin-bottom:20px"><span>⚠️</span><div>今日暂无睡眠记录。${last?`最近一条记录来自 ${last.date}。`:''}Apple Watch 睡眠数据近期同步受限。</div></div>`:''}
-  <div class="two-col-eq">
-    <div class="card"><div class="section-title"><h2>${last?`最近睡眠记录（${last.date}）`:'睡眠记录'}</h2></div>
-      ${last?`<div style="font-size:13px;color:#555c52;line-height:2">
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><span>入睡时间</span><strong>${last.start}</strong></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><span>起床时间</span><strong>${last.end}</strong></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><span>记录时长</span><strong>${last.dur}</strong></div>
-        <div style="display:flex;justify-content:space-between;padding:8px 0"><span>样本数</span><strong>${last.samples} 条</strong></div>
-      </div><div class="data-note" style="margin-top:12px">时间为时间戳推算，分期（深睡 / REM）无完整记录。</div>`:'<div class="data-note">暂无任何睡眠记录。</div>'}
-    </div>
-    <div class="card" style="display:grid;place-items:center;text-align:center;min-height:220px">
-      <div><div style="font-size:48px;margin-bottom:12px">🌙</div>
-        <div style="font-size:15px;font-weight:700;margin-bottom:8px">${D.sleep.todayHasData?'今日已有睡眠记录':'今日暂无睡眠数据'}</div>
-        <div style="font-size:13px;color:var(--muted);line-height:1.7">Apple Watch 同步受限。<br>请检查 Health Auto Export 权限<br>及 Watch → iPhone 同步状态。</div>
+  const D=DATA;
+  const days=D.sleepTrend||[];
+  const latest=[...days].reverse().find(d=>d.score!=null)||null;
+  const scoreColor =s=>s>=85?'#5f7f42':s>=70?'#2d6a8a':s>=50?'#c07000':'#b03030';
+  const scoreBg    =s=>s>=85?'#edf3e7':s>=70?'#e3f2f9':s>=50?'#fff4e0':'#ffeeee';
+  const scoreLabel =s=>s>=85?'优质睡眠':s>=70?'良好':s>=50?'一般':'需改善';
+
+  const stageRow=(emoji,label,hrs,color,total)=>{
+    const pct=hrs&&total?Math.round(hrs/total*100):0;
+    return `<div style="display:grid;grid-template-columns:110px 1fr 36px;align-items:center;gap:10px;margin-bottom:11px">
+      <span style="font-size:12px;color:#555c52">${emoji}&ensp;${label}</span>
+      <div style="height:7px;background:#ecebe4;border-radius:4px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div>
       </div>
+      <span style="font-size:12px;font-weight:700;text-align:right;color:#31352f">${hrs!=null?hrs+'h':'—'}</span>
+    </div>`;
+  };
+
+  const validDays=days.filter(d=>d.score!=null);
+  const avgScore=validDays.length?Math.round(validDays.reduce((a,d)=>a+d.score,0)/validDays.length):null;
+  const maxH=150;
+  const bars=days.map(d=>{
+    const h=d.score!=null?Math.max(5,Math.round(d.score/100*maxH)):0;
+    const col=d.score!=null?(d.score>=85?'#8ba66b':d.score>=70?'#8aaec4':'#f2b866'):'#e4e2db';
+    const isLast=latest&&d.date===latest.date;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0">
+      <div style="font-size:9px;font-weight:700;line-height:1;color:${isLast?'#5f7f42':d.score!=null?'#858a7e':'transparent'}">${d.score??''}</div>
+      <div style="width:100%;display:flex;align-items:flex-end;height:${maxH}px">
+        <div style="width:100%;height:${h}px;border-radius:4px 4px 0 0;background:${col};${isLast?'box-shadow:0 0 0 2px #5f7f42,0 0 0 4px #edf3e7;':''}"></div>
+      </div>
+      <div style="font-size:8.5px;color:#858a7e;white-space:nowrap;letter-spacing:-.3px">${d.date}</div>
+    </div>`;
+  }).join('');
+
+  const dot=(c,t)=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#858a7e"><span style="width:8px;height:8px;border-radius:2px;background:${c};flex-shrink:0"></span>${t}</span>`;
+
+  return `
+  <div class="topbar"><div><h1>睡眠记录</h1><p>Apple Watch · 近14天 · 北京时间</p></div></div>
+  ${!latest?`<div class="info-banner" style="margin-bottom:20px"><span>⚠️</span><div>近期无有效睡眠数据。请确认 Health Auto Export 权限及 Watch 同步状态。</div></div>`:''}
+  <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:16px;margin-bottom:18px">
+
+    <!-- 左：最近一晚详情 -->
+    <div class="card" style="padding:24px">
+      <div class="section-title" style="margin-bottom:18px"><h2>${latest?`最近睡眠 · ${latest.date}`:'睡眠记录'}</h2></div>
+      ${latest?`
+      <!-- 得分 + 时长 -->
+      <div style="display:flex;gap:12px;margin-bottom:22px">
+        <div style="flex:1;padding:16px 14px;border-radius:10px;background:${scoreBg(latest.score)};text-align:center">
+          <div style="font-size:44px;font-weight:800;line-height:1;color:${scoreColor(latest.score)}">${latest.score}</div>
+          <div style="font-size:10px;font-weight:700;color:${scoreColor(latest.score)};margin-top:5px;letter-spacing:.4px;text-transform:uppercase">${scoreLabel(latest.score)}</div>
+          <div style="font-size:10px;color:#858a7e;margin-top:1px">睡眠得分</div>
+        </div>
+        <div style="flex:1;padding:16px 14px;border-radius:10px;background:#f8f6f1;text-align:center;display:flex;flex-direction:column;justify-content:center">
+          <div style="font-size:36px;font-weight:800;line-height:1;color:#1f211c">${latest.hrs}<span style="font-size:16px;color:#858a7e;font-weight:500">h</span></div>
+          <div style="font-size:10px;color:#858a7e;margin-top:6px">睡眠时长</div>
+        </div>
+      </div>
+      <!-- 分期 -->
+      <div style="border-top:1px solid var(--line);padding-top:18px">
+        <div style="font-size:11px;font-weight:700;color:#858a7e;letter-spacing:.6px;margin-bottom:14px">睡眠分期</div>
+        ${latest.stages?`
+        ${stageRow('🔵','深度睡眠',latest.stages.deep,'#8aaec4',latest.hrs)}
+        ${stageRow('🟣','REM 睡眠',latest.stages.rem,'#9a91ed',latest.hrs)}
+        ${stageRow('🟢','核心睡眠',latest.stages.core,'#8ba66b',latest.hrs)}
+        ${stageRow('⚪','清醒时间',latest.stages.awake,'#b9b6ad',latest.hrs)}
+        `:'<div class="data-note">无分期数据</div>'}
+      </div>
+      `:`<div style="display:grid;place-items:center;min-height:200px;color:var(--muted)">暂无睡眠数据</div>`}
+    </div>
+
+    <!-- 右：14日趋势 -->
+    <div class="card" style="padding:24px">
+      <div class="section-title" style="margin-bottom:18px">
+        <h2>14日趋势</h2>
+        ${avgScore!=null?`<span style="font-size:13px;font-weight:500;color:#858a7e">均分 ${avgScore} 分</span>`:''}
+      </div>
+      ${days.length?`
+      <div style="display:flex;align-items:flex-end;gap:4px">${bars}</div>
+      <div style="height:1px;background:var(--line);margin:10px 0 12px"></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        ${dot('#8ba66b','≥ 85 优质')}
+        ${dot('#8aaec4','≥ 70 良好')}
+        ${dot('#f2b866','＜ 70 待改善')}
+        ${dot('#e4e2db','无数据')}
+      </div>
+      `:`<div style="display:grid;place-items:center;min-height:200px;color:var(--muted)">暂无历史数据</div>`}
     </div>
   </div>`;
 }
@@ -902,6 +970,7 @@ async function boot(){
   try{
     const h = await fetchJSON('/api/health','data/autosync-summary.json');
     rawHealth = h.json; runMode = h.live ? 'live' : 'snapshot';
+    try { const sr=await fetch('/api/sleep-scores',{cache:'no-store'}); if(sr.ok) rawSleep=await sr.json(); } catch(e){}
     const sd = (rawHealth.metrics && rawHealth.metrics.step_count) ? rawHealth.metrics.step_count.dates : {};
     healthKeys = Object.keys(sd).sort();
     latestKey = healthKeys[healthKeys.length-1];
@@ -921,6 +990,11 @@ async function applyDate(k){
   DATA = transform(rawHealth, sc.data, k, GOALS);
   DATA.mode = runMode;
   DATA.screenLive = sc.live;
+  const sl = rawSleep && rawSleep.latest;
+  DATA.sleepScore = sl ? sl.score : null;
+  DATA.sleepHrs   = sl ? sl.hrs : null;
+  DATA.sleepDate  = sl ? sl.date : null;
+  DATA.sleepTrend = rawSleep ? rawSleep.days : [];
   renderDatebar();
   nav(currentView);
 }
